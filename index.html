@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>โหลจับหิ่งห้อย</title>
+<link href="https://fonts.googleapis.com/css2?family=Itim&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#1d1b3a;--ink:#f6efd9;--glow:#ffd75e;--bad:#ff6b6b;--panel:#2c2956}
+@media (prefers-color-scheme: dark){:root{--bg:#1d1b3a}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:'Itim','Noto Sans Thai',sans-serif;display:flex;align-items:center;justify-content:center;touch-action:none;padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
+#wrap{position:relative;width:min(100vw,calc(100vh*0.667),420px);aspect-ratio:2/3}
+canvas{width:100%;height:100%;display:block;background:linear-gradient(#1d1b3a,#3a2f6b 70%,#5a3d6e);border-radius:14px}
+#ui{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;background:rgba(29,27,58,.82);border-radius:14px;padding:24px}
+#ui h1{font-size:2.2rem;margin:0;color:var(--glow)}
+#ui p{margin:0;line-height:1.5}
+button{font:inherit;font-size:1.3rem;background:var(--glow);color:#2a2000;border:0;border-radius:999px;padding:10px 32px;cursor:pointer}
+button:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+.hide{display:none!important}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c" width="400" height="600" aria-label="พื้นที่เล่นเกม"></canvas>
+  <div id="ui">
+    <h1 id="title">โหลจับหิ่งห้อย</h1>
+    <p id="msg">เลื่อนโหลไปรับหิ่งห้อยที่ร่วงลงมา<br>อย่าให้ค้างคาวโดนโหล!<br>ใช้ลูกศร ← → หรือแตะ/ลากนิ้วบนจอ</p>
+    <p id="best"></p>
+    <button id="go">เริ่มเล่น</button>
+  </div>
+</div>
+<script>
+(()=>{
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+const W=cv.width,H=cv.height;
+const ui=document.getElementById('ui'),title=document.getElementById('title'),msg=document.getElementById('msg'),bestEl=document.getElementById('best'),go=document.getElementById('go');
+let best=0;
+try{best=+localStorage.getItem('firefly-best')||0}catch(e){}
+const showBest=()=>{bestEl.textContent=best?'คะแนนสูงสุด: '+best:''};
+showBest();
+
+let jar,items,score,lives,t,spawn,running=false,keys={};
+const reset=()=>{jar={x:W/2,w:70,h:58};items=[];score=0;lives=3;t=0;spawn=0};
+
+function start(){reset();running=true;ui.classList.add('hide');last=performance.now();requestAnimationFrame(loop)}
+function end(){
+  running=false;
+  if(score>best){best=score;try{localStorage.setItem('firefly-best',best)}catch(e){}}
+  title.textContent='จบเกม';
+  msg.innerHTML='จับหิ่งห้อยได้ <b>'+score+'</b> ตัว';
+  showBest();go.textContent='เล่นอีกครั้ง';ui.classList.remove('hide');go.focus();
+}
+go.addEventListener('click',start);
+
+addEventListener('keydown',e=>{keys[e.key]=true;if(e.key==='Enter'&&!running)start()});
+addEventListener('keyup',e=>{keys[e.key]=false});
+function pointer(e){
+  if(!running)return;
+  const r=cv.getBoundingClientRect();
+  jar.x=(e.clientX-r.left)/r.width*W;
+}
+cv.addEventListener('pointermove',pointer);
+cv.addEventListener('pointerdown',pointer);
+
+function addItem(){
+  const bat=Math.random()<Math.min(.15+t/120000,.4);
+  items.push({x:30+Math.random()*(W-60),y:-20,bat,v:(110+t/250)*(bat?1.15:1)+Math.random()*40,ph:Math.random()*6});
+}
+
+function update(dt){
+  t+=dt*1000;
+  const sp=380*dt;
+  if(keys.ArrowLeft||keys.a)jar.x-=sp;
+  if(keys.ArrowRight||keys.d)jar.x+=sp;
+  jar.x=Math.max(jar.w/2,Math.min(W-jar.w/2,jar.x));
+  spawn-=dt;
+  if(spawn<=0){addItem();spawn=Math.max(.35,1-t/90000)}
+  const top=H-20-jar.h;
+  for(const it of items){
+    it.y+=it.v*dt;
+    it.x+=Math.sin(t/300+it.ph)*40*dt;
+    if(!it.done&&it.y>top&&it.y<H-20&&Math.abs(it.x-jar.x)<jar.w/2){
+      it.done=true;
+      if(it.bat){lives--;jar.hit=.3}else score++;
+    }
+    if(it.y>H+20)it.done=true;
+  }
+  items=items.filter(i=>!i.done);
+  if(jar.hit>0)jar.hit-=dt;
+  if(lives<=0)end();
+}
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  // ground
+  ctx.fillStyle='#14122b';ctx.fillRect(0,H-20,W,20);
+  for(const it of items){
+    if(it.bat){
+      ctx.fillStyle='#0e0c20';
+      const f=Math.sin(t/60+it.ph)*8;
+      ctx.beginPath();ctx.moveTo(it.x,it.y);
+      ctx.quadraticCurveTo(it.x-16,it.y-14+f,it.x-26,it.y+4);
+      ctx.quadraticCurveTo(it.x-12,it.y+2,it.x,it.y+10);
+      ctx.quadraticCurveTo(it.x+12,it.y+2,it.x+26,it.y+4);
+      ctx.quadraticCurveTo(it.x+16,it.y-14+f,it.x,it.y);ctx.fill();
+      ctx.fillStyle='#ff6b6b';ctx.fillRect(it.x-5,it.y+1,3,3);ctx.fillRect(it.x+2,it.y+1,3,3);
+    }else{
+      const g=ctx.createRadialGradient(it.x,it.y,1,it.x,it.y,22);
+      g.addColorStop(0,'rgba(255,230,120,1)');g.addColorStop(1,'rgba(255,215,94,0)');
+      ctx.fillStyle=g;ctx.beginPath();ctx.arc(it.x,it.y,22,0,7);ctx.fill();
+      ctx.fillStyle='#fff6c8';ctx.beginPath();ctx.arc(it.x,it.y,4,0,7);ctx.fill();
+    }
+  }
+  // jar
+  const x=jar.x-jar.w/2,y=H-20-jar.h;
+  ctx.fillStyle=jar.hit>0?'rgba(255,107,107,.45)':'rgba(246,239,217,.22)';
+  ctx.strokeStyle='#f6efd9';ctx.lineWidth=3;
+  ctx.beginPath();ctx.roundRect(x,y+10,jar.w,jar.h-10,10);ctx.fill();ctx.stroke();
+  ctx.fillStyle='#c9a96a';ctx.fillRect(x+6,y,jar.w-12,12);
+  // HUD
+  ctx.fillStyle='#f6efd9';ctx.font='26px Itim, sans-serif';ctx.textAlign='left';
+  ctx.fillText('คะแนน '+score,16,34);
+  ctx.textAlign='right';ctx.fillText('หัวใจ '+'♥'.repeat(Math.max(lives,0)),W-16,34);
+}
+
+let last=0;
+function loop(now){
+  if(!running)return;
+  const dt=Math.min((now-last)/1000,.05);last=now;
+  update(dt);draw();
+  if(running)requestAnimationFrame(loop);
+}
+reset();draw();
+})();
+</script>
+</body>
+</html>
